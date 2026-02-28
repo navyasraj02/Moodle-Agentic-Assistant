@@ -5,7 +5,9 @@ if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 from fastapi import FastAPI
-from .playwright_client import ensure_student_session, scan_assignments, read_assignment, read_assignment_by_id
+from .playwright_client import ensure_student_session, scan_assignments, read_assignment_by_id
+from .schemas import DraftByIdRequest, DraftResponse
+from .generator import generate_draft_by_id  
 
 app = FastAPI(title="Moodle Student Agent (MVP)")
 
@@ -25,3 +27,7 @@ async def scan_assignments_endpoint():
 @app.get("/read_assignment/{assignment_id}")
 async def read_assignment_by_id_endpoint(assignment_id: int):
     return await read_assignment_by_id(assignment_id)
+
+@app.post("/draft_response", response_model=DraftResponse)
+async def draft_response_endpoint(req: DraftByIdRequest):
+    return await generate_draft_by_id(req.assignment_id)

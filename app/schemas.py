@@ -24,7 +24,9 @@ class ReadAssignmentResponse(BaseModel):
     can_submit: Optional[bool] = None
     submission_status: Optional[str] = None
     
-    
+class DraftByIdRequest(BaseModel):
+    assignment_id: int
+       
 class DraftRequest(BaseModel):
     assignment_title: str
     instructions: str

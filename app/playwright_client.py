@@ -62,33 +62,44 @@ def _extract_assignment_id(link: str) -> int | None:
 async def _click_course_from_my_courses(page, course_name: str):
     """
     Robustly click a course from /my/courses.php.
-    Avoids fragile `div.card` selectors.
+    Handles dynamic DOM refreshes during search/filtering.
     """
-    # Prefer real course links
     course_links = page.locator('a[href*="/course/view.php"]')
 
-    # Wait until at least one course link exists
+    # 1. Wait for the initial load
     await course_links.first.wait_for(state="attached", timeout=TIMEOUT_MS)
 
-    # If we have a course name, try to click the one that matches text
+    # 2. Filtering Logic (Matches your search interaction)
     if course_name:
-        matched = course_links.filter(has_text=course_name)
-        if await matched.count() > 0:
-            target = matched.first
-            await target.scroll_into_view_if_needed()
-            await target.click()
-            return
+        # We use a loop to retry if the element detaches during the process
+        for _ in range(3): 
+            try:
+                matched = course_links.filter(has_text=course_name).first
+                if await matched.count() > 0:
+                    # check visibility AND attachment in one go
+                    await matched.wait_for(state="visible", timeout=2000)
+                    await matched.scroll_into_view_if_needed()
+                    await matched.click()
+                    return
+            except Exception:
+                await page.wait_for_timeout(500) # Short breather for DOM to settle
+                continue
 
-    # Otherwise click the first VISIBLE course link
+    # 3. Fallback: Click the first available course if search/filter is finicky
     count = await course_links.count()
-    for i in range(min(count, 20)):
-        cand = course_links.nth(i)
-        if await cand.is_visible():
-            await cand.scroll_into_view_if_needed()
-            await cand.click()
-            return
+    for i in range(min(count, 5)):
+        try:
+            cand = course_links.nth(i)
+            # Crucial: Check if it's still attached before scrolling
+            if await cand.is_visible():
+                await cand.scroll_into_view_if_needed()
+                await cand.click()
+                return
+        except Exception:
+            # If this specific index detached, move to the next one
+            continue
 
-    # Final fallback
+    # Final attempt: direct click on the first link found
     await course_links.first.click()
 
 async def _screenshot(page, name: str):
@@ -223,11 +234,6 @@ async def scan_assignments() -> dict:
 
             # 3) Click the course robustly (no fragile div.card)
             await _click_course_from_my_courses(page, COURSE_NAME)
-            await page.wait_for_load_state("networkidle")
-            await page.wait_for_timeout(500)
-            
-            await page.wait_for_load_state("networkidle")
-            await page.wait_for_timeout(500)
 
             # 4) Prefer scraping from main content first (usually has Due:)
             main = page.locator("#region-main")
