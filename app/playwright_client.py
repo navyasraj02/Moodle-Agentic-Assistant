@@ -515,3 +515,58 @@ async def _detect_submission_type_on_submission_page(page) -> str:
     if has_text:
         return "text"
     return "unknown"
+
+async def perform_moodle_submission(assignment_id: int, content: str) -> dict:
+    await ensure_student_session()
+    link = urljoin(MOODLE_URL, f"/mod/assign/view.php?id={assignment_id}")
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=HEADLESS)
+        context = await browser.new_context(storage_state=STORAGE_STATE_PATH)
+        page = await context.new_page()
+        
+        try:
+            await page.goto(link, wait_until="domcontentloaded")
+            await _open_submission_form_if_possible(page)
+            
+            # 1. Look for the editor iframe (TinyMCE/Atto)
+            # If Moodle uses an iframe, we must type inside it
+            iframe_editor = page.frame_locator('iframe[id*="_ifr"], iframe[id*="tiny"]')
+            
+            if await iframe_editor.locator("body").count() > 0:
+                # Type into the rich text editor body
+                await iframe_editor.locator("body").fill(content)
+            else:
+                # Fallback for simple textareas or Atto DIV editors
+                # Force visibility check off because Moodle sometimes hides the raw textarea
+                editor = page.locator('textarea[name*="onlinetext"], .editor_ato_content')
+                await editor.first.fill(content, force=True)
+
+            # 2. Wait so you can actually SEE the result before it closes
+            if not HEADLESS:
+                await page.wait_for_timeout(5000) # 5-second pause to verify
+
+            # 3. SAVE
+            save_btn = page.get_by_role("button", name=re.compile(r"save changes", re.I))
+            if await save_btn.count() > 0:
+                await save_btn.click()
+                await page.wait_for_load_state("networkidle")
+            
+            # Ensure the page has loaded after saving before looking for the next button
+            await page.wait_for_load_state("networkidle")
+            await page.wait_for_timeout(1000)
+            
+            # Check for the final "Submit assignment" button
+            final_submit = page.get_by_role("button", name=re.compile(r"submit assignment", re.I))
+            if await final_submit.count() > 0:
+                await final_submit.click()
+                # Handle the "Are you sure?" confirmation checkbox if it exists
+                confirm_chk = page.locator('input[type="checkbox"][name="submission_statement"]')
+                if await confirm_chk.count() > 0:
+                    await confirm_chk.check()
+                await page.get_by_role("button", name=re.compile(r"continue", re.I)).click()
+
+            return {"status": "success", "msg": "Assignment submitted successfully."}
+        finally:
+            await context.close()
+            await browser.close()

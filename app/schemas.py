@@ -38,3 +38,7 @@ class DraftResponse(BaseModel):
     action_plan: List[str]
     checklist: List[str]
     draft: str
+
+class SubmissionRequest(BaseModel):
+    assignment_id: int
+    draft_content: str
