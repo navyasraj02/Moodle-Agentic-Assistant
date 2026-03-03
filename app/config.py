@@ -25,6 +25,7 @@ TIMEOUT_MS = int(os.getenv("TIMEOUT_MS", "30000"))
 SESSION_DIR = os.path.join(os.getcwd(), "sessions")
 SCREENSHOT_DIR = os.path.join(os.getcwd(), "screenshots")
 STORAGE_STATE_PATH = os.path.join(SESSION_DIR, "storage_state.json")
+INSTRUCTOR_STORAGE_STATE_PATH = os.path.join(SESSION_DIR, "instructor_storage_state.json")
 
 os.makedirs(SESSION_DIR, exist_ok=True)
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)

@@ -42,3 +42,19 @@ class DraftResponse(BaseModel):
 class SubmissionRequest(BaseModel):
     assignment_id: int
     draft_content: str
+
+
+# ── Instructor schemas ─────────────────────────────────────────────
+
+class CreateAssignmentRequest(BaseModel):
+    title: str                        # Assignment name
+    description: str                  # Instructions shown to students
+    due_date: str                     # ISO-8601 or any human-readable date string
+                                      # e.g. "2026-03-15T23:59" or "March 15, 2026 11:59 PM"
+
+class CreateAssignmentResponse(BaseModel):
+    status: str                       # "success" | "error"
+    msg: str
+    course: Optional[str] = None
+    course_id: Optional[int] = None
+    screenshot: Optional[str] = None  # path to the Playwright screenshot
