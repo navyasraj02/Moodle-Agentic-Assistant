@@ -211,6 +211,19 @@ async def _configure_submission_types(page) -> None:
         await file_sub.uncheck()
 
 
+async def _disable_grading_due_date(page) -> None:
+    """
+    Uncheck the 'Remind me to grade by' date.
+    Moodle pre-fills this to a date before the due date which triggers a
+    validation error ('Remind me to grade by cannot be earlier than due date').
+    Disabling it avoids the error without affecting assignment behaviour.
+    """
+    chk = page.locator("#id_gradingduedate_enabled")
+    if await chk.count() > 0 and await chk.is_checked():
+        await chk.uncheck()
+        await page.wait_for_timeout(200)
+
+
 # ── Public API ─────────────────────────────────────────────────────
 
 async def create_assignment(title: str, description: str, due_date: datetime) -> dict:
@@ -257,18 +270,46 @@ async def create_assignment(title: str, description: str, due_date: datetime) ->
             # 6. Submission type → Online text only
             await _configure_submission_types(page)
 
-            # 7. Save button
-            save_btn = page.get_by_role("button", name=re.compile(r"save and return to course", re.I))
-            if await save_btn.count() == 0:
-                save_btn = page.get_by_role("button", name=re.compile(r"save and display", re.I))
-            if await save_btn.count() == 0:
-                save_btn = page.locator('input[type="submit"][name="submitbutton"]')
+            # 7. Disable 'Remind me to grade by' — Moodle pre-fills it to a date
+            #    before the due date, which causes a validation error on save.
+            await _disable_grading_due_date(page)
 
-            await save_btn.first.click()
+            # 8. Save the form
+            # Moodle renders save buttons as <input type="submit"> with known name attrs.
+            # Priority: submitbutton = "Save and return to course"
+            #           submitbutton2 = "Save and display"
+            save_sel = (
+                'input[type="submit"][name="submitbutton"], '
+                'input[type="submit"][name="submitbutton2"]'
+            )
+            save_btn = page.locator(save_sel).first
+            await save_btn.wait_for(state="visible", timeout=TIMEOUT_MS)
+            await save_btn.scroll_into_view_if_needed()
+            await save_btn.click()
+
             await page.wait_for_load_state("networkidle")
             await page.wait_for_timeout(800)
 
             screenshot_path = await _screenshot(page, "assignment-created")
+
+            # Confirm we navigated away from the edit form
+            if "modedit.php" in page.url:
+                # Extract Moodle's validation error message to help diagnose
+                error_msg = ""
+                try:
+                    err_loc = page.locator(".alert-danger, .error, #id_error_name, .form-control-feedback")
+                    if await err_loc.count() > 0:
+                        error_msg = " | ".join([
+                            (await err_loc.nth(i).inner_text()).strip()
+                            for i in range(min(await err_loc.count(), 5))
+                            if (await err_loc.nth(i).inner_text()).strip()
+                        ])
+                except Exception:
+                    pass
+                detail = f" Moodle said: {error_msg}" if error_msg else ""
+                raise RuntimeError(
+                    f"Still on the assignment edit form after clicking Save.{detail}"
+                )
 
             return {
                 "status": "success",
