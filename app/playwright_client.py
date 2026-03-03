@@ -357,20 +357,50 @@ def _detect_submission_type(page_text: str) -> str:
 async def _extract_instructions(page) -> str:
     """
     Extract only true assignment description/instructions.
+    Tries many Moodle selectors to handle different themes/versions.
     Avoid returning the entire page status table.
     """
     candidates = [
+        # Moodle 4.x common selectors
         "#intro",
+        "#intro .no-overflow",
+        ".activity-description",
+        ".activity-description .no-overflow",
         "#region-main .activity-description",
         "#region-main .intro",
+        # Moodle 3.x / Boost theme
+        ".box.generalbox.boxaligncenter",
+        ".box.generalbox.boxaligncenter .no-overflow",
+        ".box.py-3.generalbox.boxaligncenter",
+        # Assignment-specific
+        '[data-region="activity-description"]',
+        ".assignmentsummary",
+        # Edit submission page (shows instructions at top)
+        ".mform .fitem_fhtml .text_to_html",
+        ".mform .box.generalbox",
     ]
 
     for sel in candidates:
         loc = page.locator(sel)
         if await loc.count() > 0:
             txt = (await loc.first.inner_text()).strip()
-            if txt:
+            # Filter out noise: skip if it looks like the status table
+            if txt and len(txt) > 3 and "submission status" not in txt.lower()[:50]:
                 return "\n".join([line.rstrip() for line in txt.splitlines()]).strip()
+
+    # Last-resort fallback: look for any element that contains typical
+    # assignment-description text patterns, excluding status tables
+    try:
+        # Try to get text from the first .box inside #region-main that is NOT a table
+        boxes = page.locator("#region-main .box.generalbox")
+        count = await boxes.count()
+        for i in range(min(count, 5)):
+            txt = (await boxes.nth(i).inner_text()).strip()
+            if txt and "submission status" not in txt.lower() and "grading status" not in txt.lower():
+                if len(txt) > 5 and len(txt) < 5000:
+                    return "\n".join([line.rstrip() for line in txt.splitlines()]).strip()
+    except Exception:
+        pass
 
     return ""  # important: don't fallback to #region-main
 

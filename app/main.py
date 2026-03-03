@@ -6,8 +6,8 @@ if sys.platform.startswith("win"):
 
 from fastapi import FastAPI
 from .playwright_client import ensure_student_session, scan_assignments, read_assignment_by_id, perform_moodle_submission
-from .schemas import DraftByIdRequest, DraftResponse, SubmissionRequest
-from .generator import generate_draft_by_id  
+from .schemas import DraftByIdRequest, DraftRequest, DraftResponse, SubmissionRequest
+from .generator import generate_draft_by_id, generate_draft_from_instructions
 
 app = FastAPI(title="Moodle Student Agent (MVP)")
 
@@ -31,6 +31,15 @@ async def read_assignment_by_id_endpoint(assignment_id: int):
 @app.post("/draft_response", response_model=DraftResponse)
 async def draft_response_endpoint(req: DraftByIdRequest):
     return await generate_draft_by_id(req.assignment_id)
+
+@app.post("/draft_from_instructions", response_model=DraftResponse)
+async def draft_from_instructions_endpoint(req: DraftRequest):
+    return await generate_draft_from_instructions(
+        title=req.assignment_title,
+        instructions=req.instructions,
+        submission_type=req.submission_type,
+        due_date=req.due_date,
+    )
 
 @app.post("/submit_assignment")
 async def submit_assignment_endpoint(req: SubmissionRequest):
